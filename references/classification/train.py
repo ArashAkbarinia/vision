@@ -147,6 +147,7 @@ def load_data(traindir, valdir, args):
                 augmix_severity=augmix_severity,
                 backend=args.backend,
                 use_v2=args.use_v2,
+                vision_type=getattr(args, "vision_type", "trichromat"),
             ),
         )
         if args.cache_dataset:
@@ -176,6 +177,7 @@ def load_data(traindir, valdir, args):
                 interpolation=interpolation,
                 backend=args.backend,
                 use_v2=args.use_v2,
+                vision_type=getattr(args, "vision_type", "trichromat"),
             )
 
         dataset_test = torchvision.datasets.ImageFolder(
@@ -520,6 +522,13 @@ def get_args_parser(add_help=True):
     parser.add_argument("--weights", default=None, type=str, help="the weights enum name to load")
     parser.add_argument("--backend", default="PIL", type=str.lower, help="PIL or tensor - case insensitive")
     parser.add_argument("--use-v2", action="store_true", help="Use V2 transforms")
+    parser.add_argument(
+        "--vision-type",
+        default="trichromat",
+        type=str,
+        choices=["trichromat", "red-green", "yellow-blue", "monochromat"],
+        help="Simulate a colour vision type (default: trichromat)",
+    )
     return parser
 
 
