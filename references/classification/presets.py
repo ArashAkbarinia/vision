@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import torch
 from torchvision.transforms.functional import InterpolationMode
 
@@ -12,6 +14,58 @@ def get_module(use_v2):
         import torchvision.transforms
 
         return torchvision.transforms
+
+
+class VisionTypeTransformation:
+    """
+    Simulate different types of colour vision.
+
+    The image is converted from RGB to CIELAB colour space, where:
+        L* : lightness
+        a* : red-green opponent axis
+        b* : yellow-blue opponent axis
+
+    Simulated colour deficiencies are obtained by setting one or both
+    chromatic channels to their neutral value (128 in OpenCV's LAB
+    representation) before converting the image back to RGB.
+    """
+
+    def __init__(self, vision_type):
+        print("Vision type:", vision_type)
+        self.vision_type = vision_type
+
+    def __call__(self, image):
+        if self.vision_type == "trichromat":
+            return image
+
+        # Convert to HWC uint8 numpy array expected by OpenCV
+        if isinstance(image, torch.Tensor):
+            # Tensor is CHW uint8 at this point (after PILToTensor, before float conversion)
+            img_np = image.permute(1, 2, 0).numpy()
+        else:
+            img_np = np.array(image)
+
+        lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+
+        if self.vision_type == "red-green":
+            # Neutral a* channel (no red-green discrimination)
+            lab[:, :, 1] = 128
+        elif self.vision_type == "yellow-blue":
+            # Neutral b* channel (no yellow-blue discrimination)
+            lab[:, :, 2] = 128
+        elif self.vision_type == "monochromat":
+            # Neutral both chromatic channels
+            lab[:, :, 1] = 128
+            lab[:, :, 2] = 128
+
+        rgb = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+        if isinstance(image, torch.Tensor):
+            return torch.from_numpy(rgb).permute(2, 0, 1)
+        else:
+            from PIL import Image
+
+            return Image.fromarray(rgb)
 
 
 class ClassificationPresetTrain:
@@ -32,6 +86,7 @@ class ClassificationPresetTrain:
         random_erase_prob=0.0,
         backend="pil",
         use_v2=False,
+        vision_type="trichromat",
     ):
         T = get_module(use_v2)
 
@@ -45,6 +100,14 @@ class ClassificationPresetTrain:
         transforms.append(T.RandomResizedCrop(crop_size, interpolation=interpolation, antialias=True))
         if hflip_prob > 0:
             transforms.append(T.RandomHorizontalFlip(hflip_prob))
+
+        if backend == "pil":
+            transforms.append(T.PILToTensor())
+        transforms.append(VisionTypeTransformation(vision_type))
+        if backend == "pil":
+            # Convert back to PIL for colour augmentations that expect PIL input
+            transforms.append(T.ToPILImage())
+
         if auto_augment_policy is not None:
             if auto_augment_policy == "ra":
                 transforms.append(T.RandAugment(interpolation=interpolation, magnitude=ra_magnitude))
@@ -88,6 +151,7 @@ class ClassificationPresetEval:
         interpolation=InterpolationMode.BILINEAR,
         backend="pil",
         use_v2=False,
+        vision_type="trichromat",
     ):
         T = get_module(use_v2)
         transforms = []
@@ -101,6 +165,12 @@ class ClassificationPresetEval:
             T.Resize(resize_size, interpolation=interpolation, antialias=True),
             T.CenterCrop(crop_size),
         ]
+
+        if backend == "pil":
+            transforms.append(T.PILToTensor())
+        transforms.append(VisionTypeTransformation(vision_type))
+        if backend == "pil":
+            transforms.append(T.ToPILImage())
 
         if backend == "pil":
             transforms.append(T.PILToTensor())
